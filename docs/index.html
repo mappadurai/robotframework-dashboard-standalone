@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Framework Dashboard - Helm Repository</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+            padding-top: 50px;
+        }
+
+        .hero {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .code-block {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: left;
+            font-family: monospace;
+            position: relative;
+        }
+
+        .btn-copy {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #666;
+            color: white;
+            border: none;
+            font-size: 12px;
+            cursor: pointer;
+            padding: 5px 10px;
+            border-radius: 3px;
+        }
+
+        .feature-card {
+            background: white;
+            padding: 20px;
+            margin-top: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="hero">
+            <h1 class="mb-3">📊 Robot Framework Dashboard</h1>
+            <h4 class="text-muted mb-4">Enterprise Helm Repository & Kubernetes Deployment</h4>
+
+            <p class="lead">Run your test dashboards in production with Docker and Kubernetes.</p>
+
+            <div class="row justify-content-center mt-5">
+                <div class="col-md-8">
+                    <div class="code-block">
+                        <button class="btn-copy" onclick="copyCode()">Copy</button>
+                        <code id="helm-cmd">
+helm repo add robotframework-dashboard https://mappadurai.github.io/robotframework-dashboard-standalone/<br>
+helm repo update<br>
+helm install my-dashboard robotframework-dashboard/robotframework-dashboard
+                    </code>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <a href="https://github.com/mappadurai/robotframework-dashboard-standalone"
+                    class="btn btn-primary btn-lg">View on GitHub</a>
+                <a href="https://github.com/mappadurai/robotframework-dashboard-standalone/blob/main/README-FORK.md"
+                    class="btn btn-outline-dark btn-lg">Documentation</a>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="feature-card">
+                    <h3>🐳 Docker Ready</h3>
+                    <p>Includes optimized Dockerfiles for production usage. Run anywhere with a single command.</p>
+                    <code>docker run -p 8000:8000 sankaram04/robotframework-dashboard</code>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="feature-card">
+                    <h3>☸️ Kubernetes Native</h3>
+                    <p>Full Helm chart support with Ingress, Persistent Volumes, and production configuration built-in.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-5 text-muted">
+            <small>Fork maintained by <a href="https://github.com/mappadurai">mappadurai</a>. Upstream project by <a
+                    href="https://github.com/timdegroot1996">timdegroot1996</a>.</small>
+        </div>
+    </div>
+
+    <script>
+        function copyCode() {
+            const code = document.getElementById('helm-cmd').innerText;
+            navigator.clipboard.writeText(code).then(() => {
+                alert('Copied to clipboard!');
+            });
+        }
+    </script>
+
+</body>
+
+</html>
