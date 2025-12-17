@@ -1,5 +1,5 @@
 from fastapi_offline import FastAPIOffline
-from fastapi import Body, Depends, HTTPException, status
+from fastapi import Body, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
@@ -454,6 +454,44 @@ class ApiServer:
             except Exception as error:
                 message = f"Something went wrong while processing {input}, ERROR: {error}, see the browser console for more details!"
                 response = {"success": "0", "message": message, "console": console}
+            return response
+
+        @self.app.post("/upload-output")
+        async def upload_output_file(
+            file: UploadFile = File(...),
+            output_tags: List[str] = Form(default=[]),
+            output_alias: Optional[str] = Form(default=None)
+        ) -> ResponseMessage:
+            """Accepts an uploaded file and processes it as an output.xml."""
+            import shutil
+
+            # Use alias as filename if provided, otherwise use uploaded filename
+            if output_alias:
+                temp_filename = f"{output_alias}.xml"
+            else:
+                temp_filename = file.filename
+
+            try:
+                with open(temp_filename, "wb") as buffer:
+                    shutil.copyfileobj(file.file, buffer)
+                output_path = abspath(temp_filename)
+                outputs = [[output_path, output_tags]]
+                console = self.robotdashboard.process_outputs(output_file_info_list=outputs)
+                remove(temp_filename)
+                console += self.robotdashboard.create_dashboard()
+                response = {
+                    "success": "1",
+                    "message": f"SUCCESS: processed uploaded file {file.filename}, see the browser console for more details!",
+                    "console": console,
+                }
+            except Exception as error:
+                if exists(temp_filename):
+                    remove(temp_filename)
+                response = {
+                    "success": "0",
+                    "message": f"ERROR: failed to process uploaded file: {error}",
+                    "console": "",
+                }
             return response
 
         @self.app.delete("/remove-outputs")
