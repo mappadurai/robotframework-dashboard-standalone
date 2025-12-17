@@ -173,4 +173,4 @@ docker run -d -p 8080:8000 sankaram04/robotframework-dashboard:latest
 ## Next Steps
 
 - [Kubernetes Deployment](/kubernetes-deployment.md) - Deploy to Kubernetes cluster
-- [Helm Charts](/helm-deployment.md) - Use Helm for Kubernetes deployment
+- [Helm Publishing](/helm-publishing.md) - Publish Helm chart for easy installation
