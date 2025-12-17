@@ -26,6 +26,9 @@ class RobotDashboard:
         message_config: list,
         quantity: int,
         use_logs: bool,
+        offline_dependencies: bool,
+        force_json_config: bool,
+        project_version: str,
     ):
         """Sets the parameters provided in the command line"""
         self.database_path = database_path
@@ -39,8 +42,11 @@ class RobotDashboard:
         self.message_config = message_config
         self.quantity = quantity
         self.use_logs = use_logs
+        self.offline_dependencies = offline_dependencies
+        self.force_json_config = force_json_config
         self.server = False
         self.database = None
+        self.project_version = project_version
 
     def initialize_database(self, suppress=True):
         """Function that initializes the database if it does not exist
@@ -74,7 +80,7 @@ class RobotDashboard:
             )
         return console
 
-    def process_outputs(self, output_file_info_list=None, output_folder_config=None):
+    def process_outputs(self, output_file_info_list=None, output_folder_configs=None):
         """Function that processes output XML files and inserts the data into the database.
 
         Parameters:
@@ -84,7 +90,7 @@ class RobotDashboard:
         self.database.open_database()
         console = self._print_console(" 2. Processing output XML(s)")
 
-        if not output_file_info_list and not output_folder_config:
+        if not output_file_info_list and not output_folder_configs:
             console += self._print_console("  skipping step")
             console += self._print_console("=" * 86)
             self.database.close_database()
@@ -103,28 +109,30 @@ class RobotDashboard:
                         f"  ERROR: Could not process output XML '{file_path}', error: {e}"
                     )
 
-        if output_folder_config:
-            folder_path, tags = output_folder_config
-            if not exists(folder_path):
-                console += self._print_console(
-                    f"  ERROR: Could not process output folder '{folder_path}', path does not exist!"
-                )
-            else:
-                for subdir, _, files in walk(folder_path):
-                    for file in files:
-                        if "output" in file and file.endswith(".xml"):
-                            try:
-                                full_path = join(getcwd(), subdir, file)
-                                run_alias = file.replace("output_", "").replace(
-                                    ".xml", ""
-                                )
-                                console += self._process_single_output(
-                                    full_path, tags, run_alias
-                                )
-                            except Exception as e:
-                                console += self._print_console(
-                                    f"  ERROR: Could not process found output file '{file}', error: {e}"
-                                )
+        if output_folder_configs:
+            for output_folder_config in output_folder_configs:
+                folder_path, tags = output_folder_config
+                if not exists(folder_path):
+                    console += self._print_console(
+                        f"  ERROR: Could not process output folder '{folder_path}', path does not exist!"
+                    )
+                else:
+                    for subdir, _, files in walk(folder_path):
+                        files.sort()
+                        for file in files:
+                            if "output" in file and file.endswith(".xml"):
+                                try:
+                                    full_path = join(getcwd(), subdir, file)
+                                    run_alias = file.replace("output_", "").replace(
+                                        ".xml", ""
+                                    )
+                                    console += self._process_single_output(
+                                        full_path, tags, run_alias
+                                    )
+                                except Exception as e:
+                                    console += self._print_console(
+                                        f"  ERROR: Could not process found output file '{file}', error: {e}"
+                                    )
 
         console += self._print_console("=" * 86)
         self.database.close_database()
@@ -138,9 +146,13 @@ class RobotDashboard:
 
         outputProcessor = OutputProcessor(output_path)
         run_start = outputProcessor.get_run_start()
+        project_version = next(
+            (tag.removeprefix("version_") for tag in tags if tag.startswith("version_")),
+                self.project_version
+            )
         if not self.database.run_start_exists(run_start):
             output_data = outputProcessor.get_output_data()
-            self.database.insert_output_data(output_data, tags, run_alias, output_path)
+            self.database.insert_output_data(output_data, tags, run_alias, output_path, project_version)
 
             end = time()
             console += self._print_console(
@@ -215,6 +227,8 @@ class RobotDashboard:
                 self.message_config,
                 self.quantity,
                 self.use_logs,
+                self.offline_dependencies,
+                self.force_json_config,
             )
             end = time()
             console += self._print_console(

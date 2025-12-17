@@ -1,11 +1,18 @@
-from .robotdashboard import RobotDashboard
-from fastapi import FastAPI, Body, UploadFile, File, Form
-from fastapi.responses import HTMLResponse
-from typing import Annotated
+from fastapi_offline import FastAPIOffline
+from fastapi import Body, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 from uvicorn import run
+
 from os.path import join, abspath, dirname, exists
 from os import remove, mkdir, listdir
+from pathlib import Path
+from typing import List, Optional
+from secrets import compare_digest
+
+from .robotdashboard import RobotDashboard
+from .dependencies import DependencyProcessor
 from .version import __version__
 
 response_message_model_config = {
@@ -101,7 +108,7 @@ add_outputs_openapi_examples = {
         "summary": "When using an absolute folder path that contains output.xml's",
         "description": "When using an absolute folder path that contains output.xml's",
         "value": {
-            "output_path": "C:\\users\\docs\\prod-outputs",
+            "output_folder_path": "C:\\users\\docs\\prod-outputs",
             "output_tags": ["production-run"],
         },
     },
@@ -182,21 +189,21 @@ class GetOutput(BaseModel):
 class AddOutput(BaseModel):
     """The model that has to be provided when trying to add outputs to the database"""
 
-    output_path: str = None
-    output_data: str = None
-    output_folder_path: str = None
-    output_tags: list[str] = None
-    output_alias: str = None
+    output_path: Optional[str] = None
+    output_data: Optional[str] = None
+    output_folder_path: Optional[str] = None
+    output_tags: Optional[List[str]] = None
+    output_alias: Optional[str] = None
     model_config = add_output_model_config
 
 
 class RemoveOutputs(BaseModel):
     """The model that has to be provided when trying to delete outputs from the database"""
 
-    run_starts: list[str] = None
-    indexes: list[str] = None
-    aliases: list[str] = None
-    tags: list[str] = None
+    run_starts: Optional[List[str]] = None
+    indexes: Optional[List[str]] = None
+    aliases: Optional[List[str]] = None
+    tags: Optional[List[str]] = None
     model_config = remove_outputs_model_config
 
 
@@ -218,22 +225,76 @@ class RemoveLog(BaseModel):
 class ApiServer:
     """Robot Dashboard server implementation, this class handles the admin page and all functions related to the server"""
 
-    def __init__(self, server_host: str, server_port: int):
+    def __init__(
+        self,
+        server_host: str,
+        server_port: int,
+        server_user: str,
+        server_pass: str,
+        offline_dependencies: bool,
+    ):
         """Init function that starts up the fastapi app and initializes all the vars and endpoints"""
-        self.app = FastAPI()
+        self.app = FastAPIOffline(title="Robot Framework Dashboard Server", version=__version__)
+        self.security = HTTPBasic()
         self.robotdashboard: RobotDashboard
         self.server_host = server_host
         self.server_port = server_port
+        self.server_user = server_user
+        self.server_pass = server_pass
+        self.offline = offline_dependencies
         self.admin_json_config = "{}"
         self.log_dir = "robot_logs"
+        self.latest_log_dir = None
 
-        @self.app.get("/", response_class=HTMLResponse, include_in_schema=False)
-        async def admin_page():
-            """Admin page endpoint function"""
-            admin_file = join(dirname(abspath(__file__)), "templates", "admin.html")
-            admin_html = open(admin_file, "r").read()
-            admin_html = admin_html.replace('"placeholder_version"', __version__)
-            return admin_html
+        self._setup_routes()
+        self._setup_catch_all_route()
+
+    def _get_admin_page(self):
+        admin_file = join(dirname(abspath(__file__)), "./templates", "admin.html")
+        admin_html = open(admin_file, "r").read()
+        admin_html = admin_html.replace('"placeholder_version"', __version__)
+
+        dependency_processor = DependencyProcessor(admin_page=True)
+        admin_html = admin_html.replace(
+            "<!-- placeholder_javascript -->", dependency_processor.get_js_block()
+        )
+        admin_html = admin_html.replace(
+            "<!-- placeholder_css -->", dependency_processor.get_css_block()
+        )
+        admin_html = admin_html.replace(
+            "<!-- placeholder_dependencies -->",
+            dependency_processor.get_dependencies_block(self.offline),
+        )
+        admin_html = admin_html.replace('"placeholder_version"', __version__)
+        return admin_html
+
+    def _setup_routes(self):
+        def authenticate(credentials: HTTPBasicCredentials = Depends(self.security)):
+            if not self.server_user or not self.server_pass:
+                return "anonymous"
+            correct_username = compare_digest(credentials.username, self.server_user)
+            correct_password = compare_digest(credentials.password, self.server_pass)
+            if not (correct_username and correct_password):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication credentials",
+                    headers={"WWW-Authenticate": "Basic"},
+                )
+            return credentials.username
+
+        if not self.server_user or not self.server_pass:
+
+            @self.app.get("/", response_class=HTMLResponse, include_in_schema=False)
+            async def admin_page():
+                """Admin page endpoint function"""
+                return self._get_admin_page()
+
+        else:
+
+            @self.app.get("/", response_class=HTMLResponse, include_in_schema=False)
+            async def admin_page(username: str = Depends(authenticate)):
+                """Admin page endpoint function"""
+                return self._get_admin_page()
 
         @self.app.get(
             "/dashboard", response_class=HTMLResponse, include_in_schema=False
@@ -248,24 +309,23 @@ class ApiServer:
 
         @self.app.get("/log", response_class=HTMLResponse, include_in_schema=False)
         async def log_page(path: str):
-            """Serve log HTML endpoint function"""
+            """Serve log HTML and store the log directory for resources."""
             try:
-                log_html = open(path, "r", encoding="utf-8").read()
-            except Exception as error:
+                log_path = Path(path).resolve()
+                log_html = log_path.read_text(encoding="utf-8")
+                self.latest_log_dir = log_path.parent
+
+            except Exception:
                 log_html = f"""<!DOCTYPE html>
                     <html lang="en">
-                        <head>
-                            <meta charset="UTF-8">
-                            <title>404 - File Not Found</title>
-                            <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKcAAAD/AAAA/wAAAP8AAAD/AAAA/wAAAP8AAAD/AAAA/wAAAP8AAAD/AAAAqAAAAAAAAAAAAAAAAAAAALIAAAD/AAAA4AAAANwAAADcAAAA3AAAANwAAADcAAAA3AAAANwAAADcAAAA4AAAAP8AAACxAAAAAAAAAKYAAAD/AAAAuwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC/AAAA/wAAAKkAAAD6AAAAzAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN8AAAD/AAAA+gAAAMMAAAAAAAAAAgAAAGsAAABrAAAAawAAAGsAAABrAAAAawAAAGsAAABrAAAADAAAAAAAAADaAAAA/wAAAPoAAADDAAAAAAAAAIsAAAD/AAAA/wAAAP8AAAD/AAAA/wAAAP8AAAD/AAAA/wAAANEAAAAAAAAA2gAAAP8AAAD6AAAAwwAAAAAAAAAAAAAAMgAAADIAAAAyAAAAMgAAADIAAAAyAAAAMgAAADIAAAAFAAAAAAAAANoAAAD/AAAA+gAAAMMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADaAAAA/wAAAPoAAADDAAAAAAAAADwAAAB8AAAAAAAAAGAAAABcAAAAAAAAAH8AAABKAAAAAAAAAAAAAAAAAAAA2gAAAP8AAAD6AAAAwwAAAAAAAADCAAAA/wAAACkAAADqAAAA4QAAAAAAAAD7AAAA/wAAALAAAAAGAAAAAAAAANoAAAD/AAAA+gAAAMMAAAAAAAAAIwAAAP4AAAD/AAAA/wAAAGAAAAAAAAAAAAAAAMkAAAD/AAAAigAAAAAAAADaAAAA/wAAAPoAAADDAAAAAAAAAAAAAAAIAAAAcAAAABkAAAAAAAAAAAAAAAAAAAAAAAAAEgAAAAAAAAAAAAAA2gAAAP8AAAD7AAAAywAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN4AAAD/AAAAqwAAAP8AAACvAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALIAAAD/AAAAsgAAAAAAAAC5AAAA/wAAAMoAAADAAAAAwAAAAMAAAADAAAAAwAAAAMAAAADAAAAAwAAAAMkAAAD/AAAAvAAAAAAAAAAAAAAAAAAAAKwAAAD/AAAA/wAAAP8AAAD/AAAA/wAAAP8AAAD/AAAA/wAAAP8AAAD/AAAArQAAAAAAAAAAwAMAAIABAAAf+AAAP/wAAD/8AAAgBAAAP/wAAD/8AAA//AAAJIwAADHEAAA//AAAP/wAAB/4AACAAQAAwAMAAA==" />
-                        </head>
+                        <head><meta charset="UTF-8"><title>404 - File Not Found</title></head>
                         <body>
                             <h1>404 - File Not Found</h1>
                             <p>The file you are looking for ({path}) could not be found on the server!</p>
                         </body>
                     </html>
                 """
-            return log_html
+            return HTMLResponse(content=log_html)
 
         @self.app.get("/get-admin-json-config", include_in_schema=False)
         async def get_admin_json_config() -> AdminJsonConfig:
@@ -298,7 +358,7 @@ class ApiServer:
             return response
 
         @self.app.get("/get-outputs")
-        async def get_outputs() -> list[GetOutput]:
+        async def get_outputs() -> List[GetOutput]:
             """Get a list of dictionaries containting the runs (run_starts) and names of the runs
             currently available in the database"""
             runs, names, aliases, tags = self.robotdashboard.get_runs()
@@ -316,18 +376,16 @@ class ApiServer:
 
         @self.app.post("/add-outputs")
         async def add_output_to_database(
-            add_output: Annotated[
-                AddOutput,
-                Body(
-                    openapi_examples=add_outputs_openapi_examples,
-                ),
-            ],
+            add_output: AddOutput = Body(
+                ...,
+                openapi_examples=add_outputs_openapi_examples,
+            ),
         ) -> ResponseMessage:
             """Add output to database endpoint function
             The following combinations of parameters are valid:
-            1. output_path: str valid path to output.xml (+ optional: output_tags: list[str] tags for that output.xml)
-            2. output_data: str output.xml content (+ optional: output_tags: list[str] tags for that output.xml + optional output_alias)
-            3. output_folder_path: str valid path to folder (might have subfolders) that contain output.xml (multiple allowed) (+ optional: output_tags: list[str] tags for that output.xml)
+            1. output_path: str valid path to output.xml (+ optional: output_tags: List[str] tags for that output.xml)
+            2. output_data: str output.xml content (+ optional: output_tags: List[str] tags for that output.xml + optional output_alias)
+            3. output_folder_path: str valid path to folder (might have subfolders) that contain output.xml (multiple allowed) (+ optional: output_tags: List[str] tags for that output.xml)
             """
             input = "provided input, overwritten on runtime"
             console = "no console output"
@@ -361,12 +419,14 @@ class ApiServer:
                     )
                 if add_output.output_folder_path != None:
                     input = add_output.output_folder_path
-                    output_folder_path = [
-                        add_output.output_folder_path,
-                        output_tags,
+                    output_folder_paths = [
+                        [
+                            add_output.output_folder_path,
+                            output_tags,
+                        ]
                     ]
                     console = self.robotdashboard.process_outputs(
-                        output_folder_config=output_folder_path
+                        output_folder_configs=output_folder_paths
                     )
                 if add_output.output_data != None:
                     input = ""
@@ -396,47 +456,12 @@ class ApiServer:
                 response = {"success": "0", "message": message, "console": console}
             return response
 
-        @self.app.post("/upload-output")
-        async def upload_output_file(
-            file: UploadFile = File(...),
-            output_tags: list[str] = Form(default=[]),
-            output_alias: str = Form(default=None)
-        ) -> ResponseMessage:
-            """Accepts an uploaded file and processes it as an output.xml."""
-            import shutil
-
-            temp_filename = file.filename
-            try:
-                with open(temp_filename, "wb") as buffer:
-                    shutil.copyfileobj(file.file, buffer)
-                output_path = abspath(temp_filename)
-                outputs = [[output_path, output_tags]]
-                console = self.robotdashboard.process_outputs(output_file_info_list=outputs)
-                remove(temp_filename)
-                console += self.robotdashboard.create_dashboard()
-                response = {
-                    "success": "1",
-                    "message": f"SUCCESS: processed uploaded file {file.filename}, see the browser console for more details!",
-                    "console": console,
-                }
-            except Exception as error:
-                if exists(temp_filename):
-                    remove(temp_filename)
-                response = {
-                    "success": "0",
-                    "message": f"ERROR: failed to process uploaded file: {error}",
-                    "console": "",
-                }
-            return response
-
         @self.app.delete("/remove-outputs")
         async def remove_outputs_from_database(
-            remove_output: Annotated[
-                RemoveOutputs,
-                Body(
-                    openapi_examples=remove_outputs_openapi_examples,
-                ),
-            ],
+            remove_output: RemoveOutputs = Body(
+                ...,
+                openapi_examples=remove_outputs_openapi_examples,
+            ),
         ) -> ResponseMessage:
             """Remove outputs from database endpoint function
             Can be either indexes or run_starts that are known in the database
@@ -539,6 +564,25 @@ class ApiServer:
                 "console": console,
             }
             return response
+
+    def _setup_catch_all_route(self):
+        """Catch-all route for any resource after all other routes
+        This will try to resolve based on screenshots that are relative to the log files
+        If it doesn't find any matching file nothing will happen"""
+
+        @self.app.get("/{full_path:path}", include_in_schema=False)
+        async def catch_all(full_path: str):
+            if self.latest_log_dir is None:
+                raise HTTPException(404, "No log file opened yet")
+
+            resource_path = (self.latest_log_dir / full_path).resolve()
+            if not str(resource_path).startswith(str(self.latest_log_dir)):
+                raise HTTPException(403, "Access denied")
+
+            if not resource_path.exists():
+                raise HTTPException(404, f"Resource {full_path} not found")
+
+            return FileResponse(resource_path)
 
     def set_robotdashboard(self, robotdashboard: RobotDashboard):
         """Function to initialize the RobotDashboard class"""

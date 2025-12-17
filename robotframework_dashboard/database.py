@@ -24,12 +24,14 @@ class DatabaseProcessor(AbstractDatabaseProcessor):
         self.connection.row_factory = sqlite3.Row
 
     def run_start_exists(self, run_start: str):
-        run_rows = self.connection.cursor().execute(SELECT_RUN_STARTS_FROM_RUNS).fetchall()
+        run_rows = (
+            self.connection.cursor().execute(SELECT_RUN_STARTS_FROM_RUNS).fetchall()
+        )
         rows = []
         for row in run_rows:
             rows.append(self._dict_from_row(row))
-        run_starts = [item['run_start'] for item in rows]
-        return f'{run_start}' in run_starts
+        run_starts = [item["run_start"] for item in rows]
+        return f"{run_start}" in run_starts
 
     def _create_tables(self):
         """Helper function to create the tables (they use IF NOT EXISTS to not override)"""
@@ -56,19 +58,24 @@ class DatabaseProcessor(AbstractDatabaseProcessor):
             # run: path added in 0.8.1
             # suite/test: id was added in 0.8.4
             # run: metadata was added in 1.0.0
+            # keyword: owner was added in 1.2.0
+            # run: project_version was added in 1.3.0
             run_table_length = get_runs_length()
-            if run_table_length == 10:
+            if run_table_length == 10:  # -> column alias not present
                 self.connection.cursor().execute(RUN_TABLE_UPDATE_ALIAS)
                 self.connection.commit()
                 run_table_length = get_runs_length()
-            if run_table_length == 11:
+            if run_table_length == 11:  # -> column path not present
                 self.connection.cursor().execute(RUN_TABLE_UPDATE_PATH)
                 self.connection.commit()
                 run_table_length = get_runs_length()
-            if run_table_length == 12:
+            if run_table_length == 12:  # -> column metadata not present
                 self.connection.cursor().execute(RUN_TABLE_UPDATE_METADATA)
                 self.connection.commit()
                 run_table_length = get_runs_length()
+            if run_table_length == 13:  # -> column project_version not present
+                self.connection.cursor().execute(RUN_TABLE_UPDATE_PROJECT_VERSION)
+                self.connection.commit()
 
             suite_table_length = get_suites_length()
             if suite_table_length == 9:
@@ -99,6 +106,10 @@ class DatabaseProcessor(AbstractDatabaseProcessor):
                 self.connection.cursor().execute(KEYWORD_TABLE_UPDATE_ALIAS)
                 self.connection.commit()
                 keyword_table_length = get_keywords_length()
+            if keyword_table_length == 11:
+                self.connection.cursor().execute(KEYWORD_TABLE_UPDATE_OWNER)
+                self.connection.commit()
+                keyword_table_length = get_keywords_length()
         else:
             self.connection.cursor().execute(CREATE_RUNS)
             self.connection.cursor().execute(CREATE_SUITES)
@@ -111,25 +122,35 @@ class DatabaseProcessor(AbstractDatabaseProcessor):
         self.connection.close()
 
     def insert_output_data(
-        self, output_data: dict, tags: list, run_alias: str, path: Path
+        self,
+        output_data: dict,
+        tags: list,
+        run_alias: str,
+        path: Path,
+        project_version: str
     ):
         """This function inserts the data of an output file into the database"""
         try:
-            self._insert_runs(output_data["runs"], tags, run_alias, path)
+            self._insert_runs(output_data["runs"], tags, run_alias, path, project_version)
             self._insert_suites(output_data["suites"], run_alias)
             self._insert_tests(output_data["tests"], run_alias)
             self._insert_keywords(output_data["keywords"], run_alias)
         except Exception as error:
-            print(
-                f"   ERROR: something went wrong with the database: {error}"
-            )
+            print(f"   ERROR: something went wrong with the database: {error}")
 
-    def _insert_runs(self, runs: list, tags: list, run_alias: str, path: Path):
+    def _insert_runs(self, runs: list, tags: list, run_alias: str, path: Path, project_version):
         """Helper function to insert the run data with the run tags"""
         full_runs = []
         for run in runs:
-            *rest, last = run
-            new_run = tuple(rest) + (",".join(tags), run_alias, str(path)) + (last,)
+            *rest, metadata = run
+            new_run = (
+                    *rest,
+                    ",".join(tags),
+                    run_alias,
+                    str(path),
+                    metadata,
+                    project_version
+            )
             full_runs.append(new_run)
         self.connection.executemany(INSERT_INTO_RUNS, full_runs)
         self.connection.commit()
@@ -160,7 +181,9 @@ class DatabaseProcessor(AbstractDatabaseProcessor):
         """Helper function to insert the keyword data"""
         full_keywords = []
         for keyword in keywords:
-            keyword += (run_alias,)
+            keyword = list(keyword)
+            keyword.insert(10, run_alias)
+            keyword = tuple(keyword)
             full_keywords.append(keyword)
         self.connection.executemany(INSERT_INTO_KEYWORDS, full_keywords)
         self.connection.commit()

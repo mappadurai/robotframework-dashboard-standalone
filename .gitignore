@@ -1,36 +1,20 @@
-scripts
 results
 logs
 *.pyc
 __pycache__
 dist
+build
 robotframework_dashboard.egg-info
 robot_results.db
 robotdashboard*.html
 robot_dashboard*.html
+robot_logs
 index.txt
 .pabotsuitenames
 *.db
+*.vscode
 
-# Additional patterns for fork
-# Virtual environments
-venv/
-env/
-ENV/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Local development
-.env
-.env.local
-
-# Temporary files
-*.tmp
+# docs entries
+node_modules
+docs/.vitepress/dist
+docs/.vitepress/cache

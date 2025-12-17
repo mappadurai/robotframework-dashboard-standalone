@@ -2,7 +2,6 @@ from robot.api import ExecutionResult, ResultVisitor
 from robot.result.model import TestCase, TestSuite, Keyword
 from datetime import datetime
 from pathlib import Path
-from re import sub
 
 
 class OutputProcessor:
@@ -57,19 +56,21 @@ class OutputProcessor:
         """Helper function to calculate keyword statistics"""
         average_keyword_dict = {}
         average_keyword_list = []
+        run_start = keyword_list[0][0]
         for keyword in keyword_list:
-            run_start = keyword[0]
             name = keyword[1]
             passed = int(keyword[2])
             failed = int(keyword[3])
             skipped = int(keyword[4])
             elapsed_s = keyword[5]
+            owner = keyword[6]
             if not name in average_keyword_dict.keys():
                 average_keyword_dict[name] = {
                     "passed": passed,
                     "failed": failed,
                     "skipped": skipped,
                     "elapsed_s": [elapsed_s],
+                    "owner": owner,
                 }
             else:
                 average_keyword_dict[name]["passed"] += passed
@@ -94,6 +95,7 @@ class OutputProcessor:
                     round(sum_elapsed_list / len_elapsed_list, 3),  # average usage time
                     round(min_elapsed_list, 3),  # fastest usage time
                     round(max_elapsed_list, 3),  # slowest usage time
+                    average_keyword_dict[name]["owner"],  # library
                 )
             )
         return average_keyword_list
@@ -269,13 +271,34 @@ class KeywordProcessor(ResultVisitor):
         else:
             elapsed_time = round(keyword.elapsedtime / 1000, 3)
 
+        if hasattr(keyword, "owner"):
+            name = keyword.name
+            owner = keyword.owner
+            if not owner:
+                # There is no owner, this happens when keywords are located in testsuites directly
+                # Add a default one to not be empty
+                owner = "TestSuite"
+        else:
+            name = keyword.name
+            owner = keyword.libname
+            if owner:   
+                # There is a parent library or resource file
+                if "." in name: 
+                    # There is a library name in the name of the keyword
+                    name = name.split(".", 1)[1]
+            else:   
+                # There is no owner, this happens when keywords are located in testsuites directly
+                # Add a default one to not be empty
+                owner = 'TestSuite'
+
         self.keyword_list.append(
             (
                 self.run_time,
-                keyword.name,
+                name,
                 keyword.passed,
                 keyword.failed,
                 keyword.skipped,
                 elapsed_time,
+                owner,
             )
         )
