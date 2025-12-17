@@ -88,10 +88,19 @@ export default defineConfig({
           { text: '🔔 Listener Integration', link: '/listener-integration.md' },
         ]
       },
+      {
+        text: 'Deployment',
+        items: [
+          { text: '🐳 Docker Deployment', link: '/docker-deployment.md' },
+          { text: '☸️ Kubernetes Deployment', link: '/kubernetes-deployment.md' },
+          { text: '⎈ Helm Publishing', link: '/helm-publishing.md' },
+          { text: '🚀 Fork Features', link: '/fork-features.md' },
+        ]
+      },
         { text: '🤝 Contributions', link: '/contributions.md' }
     ],
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/timdegroot1996/robotframework-dashboard', ariaLabel: 'GitHub Repository' },
+      { icon: 'github', link: 'https://github.com/mappadurai/robotframework-dashboard-standalone', ariaLabel: 'GitHub Repository' },
       { icon: { svg: python_svg }, link: 'https://pypi.org/project/robotframework-dashboard/', ariaLabel: 'Python Package on PyPI' },
       { icon: { svg: slack_svg }, link: 'https://robotframework.slack.com/', ariaLabel: 'Robot Framework Slack' },
     ]
