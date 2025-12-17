@@ -10,18 +10,14 @@ RUN apt-get update && apt-get install -y \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Install python-multipart for file uploads
-RUN pip install --no-cache-dir python-multipart
-
 # Copy the application code
 COPY . .
 
-# Install the package in development mode
-RUN pip install -e .
+# Install the package with server dependencies
+RUN pip install --no-cache-dir -e .[server]
+
+# Install python-multipart for file uploads
+RUN pip install --no-cache-dir python-multipart
 
 # Create directory for logs and database
 RUN mkdir -p /app/robot_logs /app/data
