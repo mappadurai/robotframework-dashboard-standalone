@@ -73,6 +73,7 @@ The following table lists the configurable parameters and their default values:
 | `resources.limits.memory` | Memory limit | `512Mi` |
 | `resources.requests.cpu` | CPU request | `200m` |
 | `resources.requests.memory` | Memory request | `256Mi` |
+| `lifecycle` | Container lifecycle hooks (postStart, preStop) | `{}` |
 
 ## Examples
 
